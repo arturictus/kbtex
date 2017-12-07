@@ -1,0 +1,72 @@
+app:
+  name: twitter
+  envs:
+    app:
+      - name: HOST
+        value: twitter.com
+      - name: DATABASE_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: cloudsql-twitter-db-credentials
+            key: password
+      - name: DATABASE_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: cloudsql-twitter-db-credentials
+            key: username
+  containers:
+    - image: twitter:1.0.10
+      env: app
+    - image: gcr.io/cloudsql-docker/gce-proxy:1.09
+      name: cloudsql-proxy
+      command: ["hello"]
+      volumeMounts:
+        - name: cloudsql-instance-credentials
+          mountPath: /secrets/cloudsql
+          readOnly: true
+        - name: ssl-certs
+          mountPath: /etc/ssl/certs
+        - name: cloudsql
+          mountPath: /cloudsql
+        # [END proxy_container]
+      # [START volumes]
+  volumes:
+    - name: cloudsql-instance-credentials
+      secret:
+        secretName: cloudsql-instance-credentials
+    - name: ssl-certs
+      hostPath:
+        path: /etc/ssl/certs
+    - name: cloudsql
+      emptyDir:
+  # [END volumes]
+  deployments:
+    - name: twitter-web
+      labels:
+        name: twitter-web
+        stage: prod
+      replicas: 5
+      ports:
+        - containerPort: 4000
+      # livenessProbe:
+      #   httpGet:
+      #     path: /_health
+      #     port: 4000
+      #   initialDelaySeconds: 30
+      #   timeoutSeconds: 1
+      # readinessProbe:
+      #   httpGet:
+      #     path: /_health
+      #     port: 4000
+      #   initialDelaySeconds: 30
+      #   timeoutSeconds: 1
+    - name: twitter-sidekiq
+      labels:
+        name: twitter-sidekiq
+        stage: prod
+      command: ["bundle","exec","sidekiq"]
+    - name: twitter-cron
+      labels:
+        name: twitter-cron
+        stage: prod
+      command: ["bash", "-c" ,"bundle exec whenever --update-crontab && cron && touch /var/log/cron.log && tail -f /var/log/cron.log"]
